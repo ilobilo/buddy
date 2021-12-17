@@ -32,20 +32,20 @@ struct BuddyBlock
 class BuddyAlloc
 {
     public:
-    BuddyBlock *head;
-    BuddyBlock *tail;
+    BuddyBlock *head = nullptr;
+    BuddyBlock *tail = nullptr;
     void *data = nullptr;
 
-    volatile bool expanded = false;
+    bool expanded = false;
 
     BuddyBlock *next(BuddyBlock *block)
     {
-        return (BuddyBlock*)((char*)block + block->size);
+        return reinterpret_cast<BuddyBlock*>(reinterpret_cast<uint8_t*>(block) + block->size);
     }
 
     BuddyBlock *split(BuddyBlock *block, size_t size)
     {
-        if (block != NULL && size != 0)
+        if (block != nullptr && size != 0)
         {
             while (size < block->size)
             {
@@ -57,14 +57,14 @@ class BuddyAlloc
             }
             if (size <= block->size) return block;
         }
-        return NULL;
+        return nullptr;
     }
 
     BuddyBlock *find_best(size_t size)
     {
-        if (size == 0) return NULL;
+        if (size == 0) return nullptr;
 
-        BuddyBlock *best_block = NULL;
+        BuddyBlock *best_block = nullptr;
         BuddyBlock *block = this->head;
         BuddyBlock *buddy = this->next(block);
 
@@ -75,15 +75,15 @@ class BuddyAlloc
             if (block->free && buddy->free && block->size == buddy->size)
             {
                 block->size <<= 1;
-                if (size <= block->size && (best_block == NULL || block->size <= best_block->size)) best_block = block;
+                if (size <= block->size && (best_block == nullptr || block->size <= best_block->size)) best_block = block;
 
                 block = this->next(buddy);
                 if (block < this->tail) buddy = this->next(block);
                 continue;
             }
 
-            if (block->free && size <= block->size && (best_block == NULL || block->size <= best_block->size)) best_block = block;
-            if (buddy->free && size <= buddy->size && (best_block == NULL || buddy->size < best_block->size)) best_block = buddy;
+            if (block->free && size <= block->size && (best_block == nullptr || block->size <= best_block->size)) best_block = block;
+            if (buddy->free && size <= buddy->size && (best_block == nullptr || buddy->size < best_block->size)) best_block = buddy;
 
             if (block->size <= buddy->size)
             {
@@ -97,9 +97,9 @@ class BuddyAlloc
             }
         }
 
-        if (best_block != NULL) return this->split(best_block, size);
+        if (best_block != nullptr) return this->split(best_block, size);
 
-        return NULL;
+        return nullptr;
     }
 
     size_t required_size(size_t size)
@@ -175,9 +175,9 @@ class BuddyAlloc
         assert(POWER_OF_2(size) && "Size is not power of two!");
 
         this->data = std::realloc(this->data, size);
-        assert(data != NULL && "Could not allocate memory!");
+        assert(data != nullptr && "Could not allocate memory!");
 
-        this->head = (BuddyBlock*)data;
+        this->head = static_cast<BuddyBlock*>(data);
         this->head->size = size;
         this->head->free = true;
 
@@ -196,30 +196,30 @@ class BuddyAlloc
 
     void *malloc(size_t size)
     {
-        if (size == 0) return NULL;
+        if (size == 0) return nullptr;
 
         size_t actual_size = this->required_size(size);
 
         BuddyBlock *found = this->find_best(actual_size);
-        if (found == NULL)
+        if (found == nullptr)
         {
             this->coalescence();
             found = this->find_best(actual_size);
         }
 
-        if (found != NULL)
+        if (found != nullptr)
         {
             if (this->debug) std::cout << "Allocated " << size << " bytes" << std::endl;
             found->free = false;
             this->expanded = false;
-            return (void*)((char*)found + sizeof(BuddyBlock));
+            return reinterpret_cast<void*>(reinterpret_cast<uint8_t*>(found) + sizeof(BuddyBlock));
         }
 
         if (this->expanded)
         {
             assert(!this->debug && "Could not expand the heap!");
             this->expanded = false;
-            return NULL;
+            return nullptr;
         }
         this->expanded = true;
         this->expand(size);
@@ -229,7 +229,7 @@ class BuddyAlloc
     void *calloc(size_t num, size_t size)
     {
         void *ptr = this->malloc(num * size);
-        if (!ptr) return NULL;
+        if (!ptr) return nullptr;
 
         std::memset(ptr, 0, num * size);
         return ptr;
@@ -239,18 +239,18 @@ class BuddyAlloc
     {
         if (!ptr) return this->malloc(size);
 
-        BuddyBlock *block = (BuddyBlock*)((char*)ptr - sizeof(BuddyBlock));
+        BuddyBlock *block = reinterpret_cast<BuddyBlock*>(reinterpret_cast<uint8_t*>(ptr) - sizeof(BuddyBlock));
         size_t oldsize = block->size;
 
         if (size == 0)
         {
             this->free(ptr);
-            return NULL;
+            return nullptr;
         }
         if (size < oldsize) oldsize = size;
 
         void *newptr = this->malloc(size);
-        if (newptr == NULL) return ptr;
+        if (newptr == nullptr) return ptr;
 
         std::memcpy(newptr, ptr, oldsize);
         this->free(ptr);
@@ -259,12 +259,12 @@ class BuddyAlloc
 
     void free(void *ptr)
     {
-        if (ptr == NULL) return;
+        if (ptr == nullptr) return;
 
         assert(this->head <= ptr && "Head is not smaller than pointer!");
         assert(ptr < this->tail && "Pointer is not smaller than tail!");
 
-        BuddyBlock *block = (BuddyBlock*)((char*)ptr - sizeof(BuddyBlock));
+        BuddyBlock *block = reinterpret_cast<BuddyBlock*>(reinterpret_cast<uint8_t*>(ptr) - sizeof(BuddyBlock));
         block->free = true;
 
         if (this->debug) std::cout << "Freed " << block->size - sizeof(BuddyBlock) << " bytes" << std::endl;
@@ -275,6 +275,6 @@ class BuddyAlloc
     size_t allocsize(void *ptr)
     {
         if (!ptr) return 0;
-        return ((BuddyBlock*)((char*)ptr - sizeof(BuddyBlock)))->size - sizeof(BuddyBlock);
+        return (reinterpret_cast<BuddyBlock*>(reinterpret_cast<uint8_t*>(ptr) - sizeof(BuddyBlock)))->size - sizeof(BuddyBlock);
     }
 };
