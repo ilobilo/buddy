@@ -31,7 +31,7 @@ struct BuddyBlock
 
 class BuddyAlloc
 {
-    public:
+    private:
     BuddyBlock *head = nullptr;
     BuddyBlock *tail = nullptr;
     void *data = nullptr;
